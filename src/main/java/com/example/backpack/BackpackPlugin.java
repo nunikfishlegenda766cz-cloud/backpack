@@ -5,12 +5,14 @@ import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -18,14 +20,13 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 public final class BackpackPlugin extends JavaPlugin implements Listener, CommandExecutor {
 
-    private static final int NORMAL_SIZE = 18; // 2 řádky pro běžného hráče
-    private static final int OP_SIZE = 54;     // 3x větší (6 řádků) pro hráče s OP
+    private static final int NORMAL_SIZE = 18;
+    private static final int OP_SIZE = 54;
     private static final String TITLE_NORMAL = ChatColor.DARK_GREEN + "Batoh";
     private static final String TITLE_OP = ChatColor.GOLD + "OP Batoh (3x)";
 
@@ -45,7 +46,7 @@ public final class BackpackPlugin extends JavaPlugin implements Listener, Comman
 
     @Override
     public void onDisable() {
-        for (Map.Entry<UUID, Inventory> entry : openBackpacks.entrySet()) {
+        for (Map.Entry<UUID, Inventory> entry : new HashMap<>(openBackpacks).entrySet()) {
             saveInventory(entry.getKey(), entry.getValue());
         }
         openBackpacks.clear();
@@ -112,21 +113,46 @@ public final class BackpackPlugin extends JavaPlugin implements Listener, Comman
         }
     }
 
-    private void loadInventory(UUID uuid, Inventory inv, int targetSize) {
-        List<?> rawList = dataConfig.getList("backpacks." + uuid.toString());
-        if (rawList == null) return;
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        UUID uuid = event.getPlayer().getUniqueId();
+        Inventory tracked = openBackpacks.remove(uuid);
+        if (tracked != null) {
+            saveInventory(uuid, tracked);
+            saveDataFile();
+        }
+    }
 
-        int limit = Math.min(rawList.size(), targetSize);
-        for (int i = 0; i < limit; i++) {
-            Object obj = rawList.get(i);
-            if (obj instanceof ItemStack) {
-                inv.setItem(i, (ItemStack) obj);
+    private void loadInventory(UUID uuid, Inventory inv, int targetSize) {
+        ConfigurationSection section = dataConfig.getConfigurationSection("backpacks." + uuid);
+        if (section == null) return;
+
+        for (String key : section.getKeys(false)) {
+            try {
+                int slot = Integer.parseInt(key);
+                if (slot >= 0 && slot < targetSize) {
+                    ItemStack item = section.getItemStack(key);
+                    if (item != null && !item.getType().isAir()) {
+                        inv.setItem(slot, item);
+                    }
+                }
+            } catch (NumberFormatException ignored) {
             }
         }
     }
 
     private void saveInventory(UUID uuid, Inventory inv) {
-        ItemStack[] contents = inv.getContents();
+        String path = "backpacks." + uuid;
+        dataConfig.set(path, null);
+
+        for (int i = 0; i < inv.getSize(); i++) {
+            ItemStack item = inv.getItem(i);
+            if (item != null && !item.getType().isAir()) {
+                dataConfig.set(path + "." + i, item);
+            }
+        }
+    }
+}        ItemStack[] contents = inv.getContents();
         dataConfig.set("backpacks." + uuid.toString(), contents);
     }
 }
