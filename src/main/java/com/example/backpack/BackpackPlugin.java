@@ -153,7 +153,3 @@ public final class BackpackPlugin extends JavaPlugin implements Listener, Comman
         }
     }
 }
-}        ItemStack[] contents = inv.getContents();
-        dataConfig.set("backpacks." + uuid.toString(), contents);
-    }
-}
